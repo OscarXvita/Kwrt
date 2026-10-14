@@ -10,9 +10,15 @@ name: Build OpenWrt
 
 on: 
   repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Device folder under devices/ to build'
+        required: true
+        default: 'x86_64'
 
 env:
-  REPO_TOKEN: ${{ secrets.TOKEN_KIDDIN9 }}
+  REPO_TOKEN: ${{ secrets.TOKEN_KIDDIN9 || github.token }}
   PPPOE_USERNAME: ${{ secrets.PPPOE_USERNAME }}
   PPPOE_PASSWD: ${{ secrets.PPPOE_PASSWD }}
   SCKEY: ${{ secrets.SCKEY }}
@@ -31,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ["${{ github.event.client_payload.target }}"]
+        target: ["${{ github.event.client_payload.target || inputs.target }}"]
         
     steps:
     - name: Checkout
@@ -61,18 +67,18 @@ jobs:
         echo "UPLOAD_FIRMWARE_FOR_RELEASE=${UPLOAD_FIRMWARE_FOR_RELEASE}" >> $GITHUB_ENV
         echo "UPLOAD_FIRMWARE_TO_COWTRANSFER=${UPLOAD_FIRMWARE_TO_COWTRANSFER}" >> $GITHUB_ENV
         echo "UPLOAD_FIRMWARE_TO_WETRANSFER=${UPLOAD_FIRMWARE_TO_WETRANSFER}" >> $GITHUB_ENV
-        sed -i "1a REPO_TOKEN=${{ secrets.TOKEN_KIDDIN9 }}" ${{ github.workspace }}/devices/common/diy.sh
+        sed -i "1a REPO_TOKEN=${{ secrets.TOKEN_KIDDIN9 || github.token }}" ${{ github.workspace }}/devices/common/diy.sh
         sed -i "1a TARGET=${{matrix.target}}" ${{ github.workspace }}/devices/common/diy.sh
 
     - name: Trigger Packages Update
       continue-on-error: true
       if: contains(github.event.action, 'pkg')
       run: |
-        status=$(curl -H "Authorization: token ${{ secrets.TOKEN_KIDDIN9 }}" -s "https://api.github.com/repos/kiddin9/op-packages/actions/runs" | jq -r '.workflow_runs[0].status')
+        status=$(curl -H "Authorization: token ${{ secrets.TOKEN_KIDDIN9 || github.token }}" -s "https://api.github.com/repos/kiddin9/op-packages/actions/runs" | jq -r '.workflow_runs[0].status')
         if [[ "$status" == "completed" ]]; then
           curl -X POST https://api.github.com/repos/kiddin9/op-packages/dispatches \
             -H "Accept: application/vnd.github.everest-preview+json" \
-            -H "Authorization: token ${{ secrets.TOKEN_KIDDIN9 }}" \
+            -H "Authorization: token ${{ secrets.TOKEN_KIDDIN9 || github.token }}" \
           --data '{"event_type": "update"}'
         fi
 
@@ -115,7 +121,7 @@ jobs:
       run: |
         set -x
         TAG_INFO="$(curl -gs -H 'Content-Type: application/json' \
-           -H "Authorization: Bearer ${{ secrets.TOKEN_KIDDIN9 }}" \
+           -H "Authorization: Bearer ${{ secrets.TOKEN_KIDDIN9 || github.token }}" \
            -X POST -d '{ "query": "query {repository(owner: \"openwrt\", name: \"openwrt\") {refs(refPrefix: \"refs/tags/\", first: 4, orderBy: {field: TAG_COMMIT_DATE, direction: DESC}) {nodes {name target { ... on Tag {tagger {date}}}}}}}"}' https://api.github.com/graphql)"
         TAG_DATE="$( echo ${TAG_INFO} | jq -r '.data.repository.refs.nodes[] | select(.name | startswith("v25")) | .target.tagger.date' | head -n 1)"
         if [[ $(( ($(date +%s) - $(date -d "$TAG_DATE" +%s)) / 86400 )) -lt 10 || "${{ contains(github.event.action, 'tags') }}" == "true" ]]; then
@@ -238,6 +244,13 @@ jobs:
         rm -rf staging_dir/toolchain-*/initial
         df -hT
 
+    - name: Check Hyper-V kernel options
+      if: startsWith(matrix.target, 'x86')
+      run: |
+        cfg=$(ls openwrt/build_dir/target-*/linux-*/linux-*/.config | head -1)
+        grep -E 'CONFIG_PCI_MMCONFIG|CONFIG_PCI_HYPERV' "$cfg"
+        grep -q '^CONFIG_PCI_MMCONFIG=y' "$cfg" || { echo "::error::CONFIG_PCI_MMCONFIG is not enabled"; exit 1; }
+
     - name: Organize files
       id: organize
       continue-on-error: true
@@ -286,7 +299,7 @@ jobs:
       continue-on-error: true
       if: env.REPO_TOKEN && env.UPLOAD_FIRMWARE_FOR_RELEASE == 'true'
       env:
-        GITHUB_TOKEN: ${{ secrets.TOKEN_KIDDIN9 }}
+        GITHUB_TOKEN: ${{ secrets.TOKEN_KIDDIN9 || github.token }}
       with:
         files: "${{ env.FIRMWARE }}/*"
         name: ${{ env.date2 }} ${{matrix.target}} ${{ env.EMOJI }}
@@ -309,7 +322,7 @@ jobs:
       uses: GitRML/delete-workflow-runs@main
       continue-on-error: true
       with:
-        token: ${{ secrets.TOKEN_KIDDIN9 }}
+        token: ${{ secrets.TOKEN_KIDDIN9 || github.token }}
         retain_days: 100
         keep_minimum_runs: 0
 
@@ -321,4 +334,4 @@ jobs:
         keep_latest: 15
         delete_tags: true
       env:
-        GITHUB_TOKEN: ${{ secrets.TOKEN_KIDDIN9 }}
+        GITHUB_TOKEN: ${{ secrets.TOKEN_KIDDIN9 || github.token }}
