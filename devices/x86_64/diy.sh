@@ -20,3 +20,12 @@ sed -i 's/kmod-r8169/kmod-r8168/' target/linux/x86/image/64.mk
 sed -i 's/256/1024/g' target/linux/x86/image/Makefile
 
 
+
+# --- Hyper-V SR-IOV support ---
+# ixgbevf (and other Hyper-V VF drivers) read their MAC through PCI config space,
+# which needs CONFIG_PCI_MMCONFIG. Without it the VF gets a random MAC and
+# Hyper-V reports "SR-IOV is not functional".
+for f in target/linux/x86/64/config-*; do
+	sed -i -e '/CONFIG_PCI_MMCONFIG[ =]/d' -e '/CONFIG_PCI_HYPERV[ =]/d' -e '/CONFIG_PCI_HYPERV_INTERFACE[ =]/d' "$f"
+	printf 'CONFIG_PCI_MMCONFIG=y\nCONFIG_PCI_HYPERV=y\nCONFIG_PCI_HYPERV_INTERFACE=y\n' >> "$f"
+done
