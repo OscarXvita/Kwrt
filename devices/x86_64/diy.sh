@@ -21,11 +21,16 @@ sed -i 's/256/1024/g' target/linux/x86/image/Makefile
 
 
 
+# --- Ensure single-profile build so all =y packages in .config are installed into rootfs ---
+sed -i -e '/CONFIG_TARGET_MULTI_PROFILE/d' -e '/CONFIG_TARGET_ALL_PROFILES/d' .config
+printf 'CONFIG_TARGET_x86_64_DEVICE_generic=y\n# CONFIG_TARGET_MULTI_PROFILE is not set\n# CONFIG_TARGET_ALL_PROFILES is not set\n# CONFIG_TARGET_PER_DEVICE_ROOTFS is not set\n' >> .config
+
 # --- Hyper-V SR-IOV support ---
 # ixgbevf (and other Hyper-V VF drivers) read their MAC through PCI config space,
 # which needs CONFIG_PCI_MMCONFIG. Without it the VF gets a random MAC and
 # Hyper-V reports "SR-IOV is not functional".
-for f in target/linux/x86/64/config-*; do
+for f in target/linux/x86/config-* target/linux/x86/64/config-*; do
+	[ -f "$f" ] || continue
 	sed -i -e '/CONFIG_PCI_MMCONFIG[ =]/d' -e '/CONFIG_PCI_HYPERV[ =]/d' -e '/CONFIG_PCI_HYPERV_INTERFACE[ =]/d' "$f"
 	printf 'CONFIG_PCI_MMCONFIG=y\nCONFIG_PCI_HYPERV=y\nCONFIG_PCI_HYPERV_INTERFACE=y\n' >> "$f"
 done
